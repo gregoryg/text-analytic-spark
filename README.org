@@ -1,2 +1,4 @@
-# text-analytic-spark
+* text-analytic-spark
 Using Spark text analytics from Python / pyspark
+
+* TODO tutorial
