@@ -5,6 +5,7 @@ from pyspark.sql.types import *
 from pyspark.sql.functions import udf, expr, concat, col
 import struct
 from pyspark.sql.functions import monotonically_increasing_id
+import pandas as pd
 
 
 conf = SparkConf().setAppName("text-analytics-flight")
@@ -25,6 +26,18 @@ for type in rawdata.dtypes:
 
 target = rawdata.select(rawdata['rating'].cast(IntegerType()))
 target.dtypes
+
+## GJG - filter out stopwords using NLTK
+from nltk.corpus import stopwords 
+from nltk.tokenize import word_tokenize, sent_tokenize
+
+stop_words = set(stopwords.words('english'))
+
+filter_stopwords = lambda r:[[word for word in word_tokenize(sente) if word not in stop_words] for sente in sent_tokenize(r)]
+rawdata.review = rawdata.review.str.lower
+
+rawdatapd = rawdata.toPandas()
+rawdatapd['cleaned_review'] = rawdatapd['review'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop_words)]))
 
 ################################################################################################
 #
