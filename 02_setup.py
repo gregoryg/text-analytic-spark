@@ -1,6 +1,6 @@
-import nltk
+# import nltk
 
-# pip3 install nltk
+# # pip3 install nltk
 
-nltk.download('stopwords')
-nltk.download('punkt')
+# nltk.download('stopwords')
+# nltk.download('punkt')

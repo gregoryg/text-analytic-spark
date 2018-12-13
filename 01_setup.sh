@@ -1,5 +1,5 @@
 #!/bin/bash
-pip3 install nltk
+# pip3 install nltk sklearn_pandas
 
 mkdir -p data
 wget -P data/ 'https://raw.githubusercontent.com/zaratsian/Spark/master/data/airlines.csv'
