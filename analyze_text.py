@@ -15,7 +15,13 @@ conf = SparkConf().setAppName("text-analytics-flight")
 sc = SparkContext(conf=conf)
 sql = SQLContext(sc)
 
-## Let's start by reading the data in, giving the rows unique IDs
+# # ML Analysis of free form text
+# This code leverages the power of the Cloudera Spark engine to analyze free-form text - 
+# reviews of airline experiences, in this case.
+
+# # Initial data load and data cleansing
+# Let's start by reading the data in, giving the rows unique IDs
+# Additionally, we will cast numeric columns and get rid of quotation marks
 rawdata = sql.read.load("hdfs:///user/gregj/data/airline-reviews/airlines.csv", format="csv", header=True)
 rawdata = rawdata.fillna({'review': ''})                               # Replace nulls with blank string
 rawdata = rawdata.withColumn("uid", monotonically_increasing_id())     # Create Unique ID
@@ -25,11 +31,9 @@ rawdata = rawdata.withColumn("value", rawdata.value.cast(IntegerType()))
 rawdata = rawdata.withColumn("review", regexp_replace('review', '"', ''))
 
 # Show rawdata (as DataFrame)
-rawdata.show(10)
-
-# Print data types
-for type in rawdata.dtypes:
-    print (type)
+rawdata.show(10
+             
+# Our next step is to remove "stop words" - commonly occuring connecting words, and to vectorize the resulting list of words, preparing the text for submission to ML analysis
 
 def cleanup_text(mytext):
     words = mytext.split()
@@ -66,26 +70,26 @@ def cleanup_text(mytext):
     return text_out
 
 udf_cleantext = udf(cleanup_text , ArrayType(StringType()))
-clean_text = rawdata.withColumn("review_filtered", udf_cleantext(rawdata.review))
 rawdata = rawdata.withColumn("review_filtered", udf_cleantext(rawdata.review))
 
-    
-# ## GJG - filter stopwords, create array of words for the index
-# tokenizer = Tokenizer(inputCol="review", outputCol="review_array")
-# sw = StopWordsRemover(inputCol="review_array", outputCol="review_filtered")
-# index_transformer = Pipeline(stages=[tokenizer, sw]).fit(rawdata)
-# rawdata = index_transformer.transform(rawdata)
-# # cv = CountVectorizer(inputCol="review_filtered", outputCol="tf", minTF=1, vocabSize=2 ** 17)
+# Machine Learning on Text
 
-
+# And now the good stuff begins.  We start by running a CountVectorizer from the SparkML Features library
+# This wil count word frequencies in preparation for indexing by TF-IDF and other methods
+             
 # cv = CountVectorizer(inputCol="review_filtered", outputCol="tf", minTF=1, vocabSize=1000)
 cv = CountVectorizer(inputCol="review_filtered", outputCol="rawFeatures", vocabSize=1000)
 cvmodel = cv.fit(rawdata)
 featurizedData = cvmodel.transform(rawdata)
 
+# We now have the complete vocabulary, with frequency per review
+# We will "broadcast" that vocabulary acroos all nodes in the cluster, to permit relative frequency indexing across reviews
 vocab = cvmodel.vocabulary
 vocab_broadcast = sc.broadcast(vocab)
 
+# # TF-IDF (Term Frequency-Inverse Document Frequency)
+# In information retrieval, tf–idf or TFIDF, short for term frequency–inverse document frequency, is a numerical statistic that is intended to reflect how important a word is to a document in a collection or corpus.[1] It is often used as a weighting factor in searches of information retrieval, text mining, and user modeling. T
+             
 idf = IDF(inputCol="rawFeatures", outputCol="features")
 idfModel = idf.fit(featurizedData)
 rescaledData = idfModel.transform(featurizedData) # TFIDF
@@ -95,9 +99,6 @@ rescaledData = idfModel.transform(featurizedData) # TFIDF
 # "em" = expectation-maximization 
 lda = LDA(k=25, seed=123, optimizer="em", featuresCol="features")
 ldamodel = lda.fit(rescaledData)
- 
-# ldamodel.isDistributed()
-# ldamodel.vocabSize()
  
 ldatopics = ldamodel.describeTopics()
 ## Show the top 25 Topics
@@ -114,7 +115,9 @@ udf_map_termID_to_Word = udf(map_termID_to_Word , ArrayType(StringType()))
 ldatopics_mapped = ldatopics.withColumn("topic_desc", udf_map_termID_to_Word(ldatopics.termIndices))
 ldatopics_mapped.select(ldatopics_mapped.topic, ldatopics_mapped.topic_desc).show(50,False)
 
+
 # # Combine the data-driven topics with the original airlines dataset
+# Now, let's join the original data in with the computed statistics to make the new insights accessible to a broad range of analysts.
 ldaResults = ldamodel.transform(rescaledData)
 ldaResults.select('id','airline','date','cabin','rating','review_filtered','features','topicDistribution').show()
 
@@ -124,14 +127,13 @@ def breakout_array(index_number, record):
 
 udf_breakout_array = udf(breakout_array, FloatType())
 
-# Extract document weights for Topics 12 and 20
+# ## Extract document weights for Topics 12 and 20
+# Focus in on details for a couple of topics of particular interest to our analysts
 enrichedData = ldaResults                                                                   \
         .withColumn("Topic_12", udf_breakout_array(lit(12), ldaResults.topicDistribution))  \
         .withColumn("topic_20", udf_breakout_array(lit(20), ldaResults.topicDistribution))            
 
 enrichedData.select('id','airline','date','cabin','rating','review_filtered','features','topicDistribution','Topic_12','Topic_20').show()
-
-#enrichedData.agg(max("Topic_12")).show()
 
 enrichedData.createOrReplaceTempView("enrichedData")
 
